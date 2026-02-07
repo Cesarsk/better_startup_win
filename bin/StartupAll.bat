@@ -13,8 +13,11 @@
 
 setlocal enabledelayedexpansion
 
+:: Ensure logs directory exists
+if not exist "%~dp0..\logs" mkdir "%~dp0..\logs" > nul 2>&1
+
 :: Simple log to track flow
-set "STARTUP_LOG=%~dp0StartupAll.log"
+set "STARTUP_LOG=%~dp0..\logs\StartupAll.log"
 echo [%date% %time%] StartupAll begin> "%STARTUP_LOG%"
 
 :: Track whether startup resolution was wrong
