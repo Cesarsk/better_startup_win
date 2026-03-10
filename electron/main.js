@@ -1,4 +1,6 @@
 const path = require("node:path");
+const fs = require("node:fs");
+const os = require("node:os");
 const { spawn } = require("node:child_process");
 const {
   app,
@@ -26,6 +28,24 @@ let runtime = {
 
 const STARTUP_TASK_NAME = "Better Startup Win";
 const startedFromTaskScheduler = process.argv.includes("--startup");
+
+function configureRuntimePaths() {
+  const runtimeRoot = path.join(os.tmpdir(), "better-startup-win-runtime");
+  const cacheDir = path.join(runtimeRoot, "cache");
+  const userDataDir = path.join(runtimeRoot, "user-data");
+
+  try {
+    fs.mkdirSync(cacheDir, { recursive: true });
+    fs.mkdirSync(userDataDir, { recursive: true });
+    app.setPath("userData", userDataDir);
+    app.commandLine.appendSwitch("disk-cache-dir", cacheDir);
+    app.commandLine.appendSwitch("disable-gpu-shader-disk-cache");
+  } catch {
+    // Keep Electron defaults if runtime path configuration fails.
+  }
+}
+
+configureRuntimePaths();
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
