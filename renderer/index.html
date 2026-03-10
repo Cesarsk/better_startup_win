@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Better Startup Win</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Better Startup Win</h1>
+        <p>Tray-first startup automation with editable DAG flows</p>
+      </div>
+      <div class="top-actions">
+        <button id="undo-btn">Undo</button>
+        <button id="redo-btn">Redo</button>
+        <button id="run-flow-btn" class="accent">Run flow</button>
+        <button id="stop-flow-btn">Stop</button>
+        <button id="validate-flow-btn">Validate</button>
+        <button id="save-state-btn">Save</button>
+        <button id="install-task-btn">Install Task Scheduler</button>
+        <button id="help-btn" class="ghost">Help</button>
+        <button id="donate-btn" class="ghost">Support ❤️</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel sidebar">
+        <h2>Flows</h2>
+        <div class="row">
+          <select id="flow-select"></select>
+        </div>
+        <div class="row gap">
+          <button id="new-flow-btn">New flow</button>
+          <button id="clone-flow-btn">Clone flow</button>
+          <button id="delete-flow-btn">Delete flow</button>
+        </div>
+
+        <h3>Global settings</h3>
+        <label class="field">
+          <span>Default flow</span>
+          <select id="default-flow-select"></select>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="auto-run-checkbox" />
+          <span>Auto-run default flow when started with <code>--startup</code></span>
+        </label>
+        <div class="field">
+          <span>Help</span>
+          <button id="repo-link-btn" type="button">Open project repository</button>
+        </div>
+
+        <h3>Edge builder</h3>
+        <label class="field">
+          <span>From</span>
+          <select id="edge-from-select"></select>
+        </label>
+        <label class="field">
+          <span>To</span>
+          <select id="edge-to-select"></select>
+        </label>
+        <label class="field">
+          <span>Condition</span>
+          <select id="edge-condition-select">
+            <option value="success">success</option>
+            <option value="failure">failure</option>
+            <option value="always">always</option>
+          </select>
+        </label>
+        <button id="add-edge-btn">Add edge</button>
+
+        <h3>Edges</h3>
+        <div id="edge-list" class="edge-list"></div>
+      </section>
+
+      <section class="panel graph-panel">
+        <div class="graph-header">
+          <h2>Flow Graph</h2>
+          <div class="graph-tools">
+            <button id="zoom-out-btn" type="button">-</button>
+            <button id="zoom-in-btn" type="button">+</button>
+            <button id="fit-graph-btn" type="button">Fit</button>
+            <span id="runtime-chip" class="chip idle">Idle</span>
+          </div>
+        </div>
+        <div id="graph-canvas"></div>
+      </section>
+
+      <section class="panel editor">
+        <h2>Node editor</h2>
+        <div class="row gap">
+          <button id="new-node-btn">New node</button>
+          <button id="delete-node-btn">Delete node</button>
+        </div>
+
+        <label class="field">
+          <span>Selected node</span>
+          <select id="node-select"></select>
+        </label>
+
+        <label class="field">
+          <span>Label</span>
+          <input id="node-label-input" type="text" />
+        </label>
+
+        <label class="field">
+          <span>Type</span>
+          <select id="node-type-select">
+            <option value="delay">delay</option>
+            <option value="start_process">start_process</option>
+            <option value="stop_process">stop_process</option>
+            <option value="close_window">close_window</option>
+            <option value="run_script">run_script</option>
+            <option value="wait_display">wait_display</option>
+            <option value="wait_monitor">wait_monitor</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Config fields</span>
+          <div id="node-config-form" class="node-config-grid"></div>
+        </label>
+        <div id="node-validation-summary" class="validation-summary"></div>
+
+        <details id="advanced-config-details" class="advanced-config">
+          <summary>Advanced JSON</summary>
+          <label class="field">
+            <span>Config JSON</span>
+            <textarea id="node-config-input" rows="10"></textarea>
+          </label>
+          <div class="row gap">
+            <button id="apply-json-btn" type="button">Apply JSON to fields</button>
+          </div>
+        </details>
+
+        <button id="save-node-btn" class="accent">Save node</button>
+      </section>
+    </main>
+
+    <section class="panel logs">
+      <div class="graph-header">
+        <h2>Run Logs</h2>
+        <button id="clear-logs-btn">Clear</button>
+      </div>
+      <pre id="log-output"></pre>
+    </section>
+
+    <dialog id="flow-modal" class="app-dialog">
+      <h3>Create Flow</h3>
+      <p>Name your new flow.</p>
+      <label class="field">
+        <span>Flow name</span>
+        <input id="flow-modal-name" type="text" maxlength="70" />
+      </label>
+      <div class="row gap dialog-actions">
+        <button id="flow-modal-cancel" type="button">Cancel</button>
+        <button id="flow-modal-create" class="accent" type="button">Create flow</button>
+      </div>
+    </dialog>
+
+    <dialog id="node-modal" class="app-dialog">
+      <h3>Create Node</h3>
+      <p>Add a node to the current flow.</p>
+      <label class="field">
+        <span>Node label</span>
+        <input id="node-modal-label" type="text" maxlength="70" />
+      </label>
+      <label class="field">
+        <span>Node type</span>
+        <select id="node-modal-type">
+          <option value="delay">delay</option>
+          <option value="start_process">start_process</option>
+          <option value="stop_process">stop_process</option>
+          <option value="close_window">close_window</option>
+          <option value="run_script">run_script</option>
+          <option value="wait_display">wait_display</option>
+          <option value="wait_monitor">wait_monitor</option>
+        </select>
+      </label>
+      <div class="row gap dialog-actions">
+        <button id="node-modal-cancel" type="button">Cancel</button>
+        <button id="node-modal-create" class="accent" type="button">Create node</button>
+      </div>
+    </dialog>
+
+    <dialog id="wizard-modal" class="app-dialog">
+      <h3>First-Run Wizard</h3>
+      <p>Create your first flow in one step.</p>
+      <label class="field">
+        <span>Flow name</span>
+        <input id="wizard-flow-name" type="text" maxlength="70" />
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" id="wizard-add-node" checked />
+        <span>Add a first node now</span>
+      </label>
+      <div id="wizard-node-fields">
+        <label class="field">
+          <span>First node label</span>
+          <input id="wizard-node-label" type="text" maxlength="70" />
+        </label>
+        <label class="field">
+          <span>First node type</span>
+          <select id="wizard-node-type">
+            <option value="delay">delay</option>
+            <option value="start_process">start_process</option>
+            <option value="stop_process">stop_process</option>
+            <option value="close_window">close_window</option>
+            <option value="run_script">run_script</option>
+            <option value="wait_display">wait_display</option>
+            <option value="wait_monitor">wait_monitor</option>
+          </select>
+        </label>
+      </div>
+      <div class="row gap dialog-actions">
+        <button id="wizard-cancel" type="button">Cancel</button>
+        <button id="wizard-create" class="accent" type="button">Create flow</button>
+      </div>
+    </dialog>
+
+    <script src="../node_modules/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

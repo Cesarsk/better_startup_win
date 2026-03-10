@@ -1,61 +1,115 @@
-# Startup Win11
+# Better Startup Win
 
-A small set of Windows startup scripts that wait for the display to reach a preferred resolution, then launch or trim background apps and optionally run touch calibration for the XENEON EDGE monitor.
+Windows startup automation with a tray app and a visual DAG editor.
 
-## What's inside
-- bin/StartupAll.bat: thin wrapper used by Task Scheduler
-- bin/StartupAll.ps1: main orchestration script
-- bin/StartupAll.vbs: hidden launcher for Task Scheduler
-- bin/TouchCalibration.bat / bin/TouchCalibration.ps1: EDID-gated touch calibration helper
-- config/startup.config.psd1: editable startup settings (paths, resolution, monitor, delays)
-- tools/killall.bat: helper to terminate tray apps (optional)
-- tools/TestStreamDeck.bat, tools/TestMinimize.bat: manual test helpers
-- shortcuts/Touch.lnk: touch shortcut
+This project started as startup scripts and now includes a desktop GUI where you can build flows that run app launches, kills, waits, and scripts in a predictable graph.
 
-## Usage
-1. Keep the folder structure intact.
-2. Update settings in `config/startup.config.psd1`:
-   - display resolution and refresh target
-   - monitor EDID name
-   - app executable paths
-   - startup delays and polling timeouts
-3. If needed, change the EDID name:
-   - `config/startup.config.psd1` in `Monitor.EdidName`
-   - `bin/TouchCalibration.ps1` default `EdidName` (optional fallback)
-4. Create a Task Scheduler entry that runs:
-   - `bin/StartupAll.vbs`
-   - Run with highest privileges
-   - At logon (or at startup)
+## Why this app exists
+- Windows startup can be unreliable when multiple apps compete for resources at logon.
+- Some app combinations are compatibility-sensitive and need a strict startup order.
+- This tool exists to make those startup sequences explicit, repeatable, and editable.
 
-## Task Scheduler setup
-1. Open Task Scheduler and select your task (or create a new one).
-2. General tab:
-   - Run only when user is logged on (recommended)
-   - Run with highest privileges
-   - Configure for: Windows 10/11
-3. Triggers tab:
-   - At log on (or At startup)
-4. Actions tab:
-   - Action: Start a program
-   - Program/script: `C:\Users\lucac\Documents\Projects\startup\bin\StartupAll.vbs`
-   - Start in (optional): `C:\Users\lucac\Documents\Projects\startup\bin`
-5. Conditions tab (recommended):
-   - Disable `Start the task only if the computer is on AC power` when not needed
-   - Disable idle-only requirements
-6. Settings tab (recommended):
-   - Allow task to be run on demand
-   - If task is already running: `Do not start a new instance`
+Reference use case from this repo:
+- Wait for specific display readiness (resolution/refresh).
+- Restart or sequence apps like NZXT CAM, SignalRGB, AIDA64, and Stream Deck.
+- Wait for monitor EDID detection before running dependent actions.
+- Apply delays and conditional behavior so tray apps settle correctly.
 
-## Testing
-- Dry run (safe, no app starts/stops):
-  - `powershell -NoProfile -ExecutionPolicy Bypass -File .\bin\StartupAll.ps1 -DryRun`
-- Real run:
-  - `cscript //nologo .\bin\StartupAll.vbs`
+## Core idea
+- One profile for startup behavior.
+- Multiple flows inside that profile.
+- One default flow is selected for auto-run.
+- Task Scheduler launches the tray app; the app can auto-run the default flow.
+- Fresh installs start empty so users can design flows for their own setup.
 
-## Logging
-- `logs/StartupAll.log` is written under the repo root (the folder is created if missing).
-- `TouchCalibration.log` is written to `%TEMP%`.
+## What is implemented now (MVP)
+- Electron desktop app with tray menu.
+- DAG flow editor with vertical graph visualization.
+- Draggable nodes with persisted positions.
+- Connector manipulation on canvas (add/remove edges) plus edge builder panel.
+- Typed node configuration fields with optional advanced JSON mode.
+- First-run wizard for empty projects.
+- Undo/redo support for flow editing.
+- Node types:
+  - `delay`
+  - `start_process`
+  - `stop_process`
+  - `close_window`
+  - `run_script`
+  - `wait_display`
+  - `wait_monitor`
+- Flow validation (missing nodes/edges, self-edge, cycle detection).
+- Runtime execution with node status (`running`, `success`, `failed`, `skipped`).
+- Startup auto-run support with `--startup` flag.
+- Simple donation button (`Support`) in GUI and tray.
 
-## Notes
-- The startup orchestrator uses `Get-CimInstance` for display and EDID checks.
-- Calibration runs only if the startup resolution was initially wrong and then becomes correct.
+## Documentation
+- Architecture reference: `docs/ARCHITECTURE.md`
+- User guide: `docs/USER_GUIDE.md`
+
+## Install (end users)
+Use the Windows installer from GitHub Releases.
+
+- Download `BetterStartupWin-Setup-<version>.exe` from the latest release.
+- Run installer and follow prompts.
+- Launch `Better Startup Win` from Start menu.
+
+End users do not need Node.js or any manual prerequisite setup.
+
+## Project structure
+- `electron/main.js`: tray app, window lifecycle, IPC, Task Scheduler installer.
+- `electron/runner.js`: DAG validation and execution engine.
+- `electron/store.js`: persisted state load/save.
+- `electron/default-state.js`: default profile and flow.
+- `electron/preload.js`: secure renderer API bridge.
+- `renderer/index.html`, `renderer/styles.css`, `renderer/app.js`: GUI.
+- `bin/`: legacy script entrypoints kept for compatibility.
+
+## Local development
+1. Install dependencies:
+   - `npm install`
+2. Start GUI app:
+   - `npm start`
+3. Start in startup mode (hidden window intention, tray-first):
+   - `npm run start:startup`
+4. Run automated tests:
+   - `npm test`
+5. Build installer locally:
+   - `npm run dist`
+
+## Help and support links in app
+- `Help` opens project repository:
+  - `https://github.com/Cesarsk/better_startup_win`
+- `Support ❤️` opens donation page:
+  - `https://buymeacoffee.com/lucach`
+
+The donation URL is fixed in-app and not exposed as an editable field.
+
+## Task Scheduler integration (tray mode)
+The app includes a GUI button (`Install Task Scheduler`) that creates/updates a startup task named `Better Startup Win`.
+
+Manual equivalent command pattern:
+- Action target should launch the app with `--startup`.
+- In development that is effectively:
+  - `"<electron.exe>" "<repo-path>" --startup`
+
+Recommended Task Scheduler settings:
+- Trigger: `At log on`
+- General: `Run with highest privileges`
+- Settings: `If task is already running, do not start a new instance`
+
+## Legacy scripts
+The original script automation still exists in `bin/` and can still be used while migrating flows into the GUI tool.
+
+## CI build pipeline
+- GitHub Actions workflow builds Windows installer and uploads artifacts:
+  - `.github/workflows/windows-build.yml`
+
+## License
+MIT. See `LICENSE`.
+
+## Donations
+The app exposes a small `Support` button (top bar and tray menu) that opens the configured donation link.
+
+Default donation URL:
+- `https://buymeacoffee.com/lucach`
