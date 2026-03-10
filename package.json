@@ -1,0 +1,63 @@
+{
+  "name": "better-startup-win",
+  "version": "0.1.0",
+  "description": "Windows startup automation with tray app and DAG GUI",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "start:startup": "electron . --startup",
+    "test": "node --test tests",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win nsis"
+  },
+  "keywords": [
+    "windows",
+    "startup",
+    "tray",
+    "dag",
+    "automation"
+  ],
+  "author": "Cesarsk",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^30.5.1",
+    "electron-builder": "^24.13.3",
+    "jsdom": "^24.1.3"
+  },
+  "dependencies": {
+    "vis-network": "^9.1.9"
+  },
+  "build": {
+    "appId": "com.cesarsk.betterstartupwin",
+    "productName": "Better Startup Win",
+    "files": [
+      "electron/**/*",
+      "renderer/**/*",
+      "assets/**/*",
+      "package.json",
+      "LICENSE"
+    ],
+    "directories": {
+      "buildResources": "assets",
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "BetterStartupWin-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

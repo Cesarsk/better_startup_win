@@ -3,3 +3,8 @@
 *.bak
 Thumbs.db
 desktop.ini
+node_modules/
+dist/
+out/
+release/
+*.asar
