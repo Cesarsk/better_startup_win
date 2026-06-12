@@ -46,10 +46,78 @@ function Close-MainWindowSafe {
   }
 }
 
+function Close-MainWindowToTraySafe {
+  param(
+    [string]$Name,
+    [int]$TimeoutSeconds = 60
+  )
+
+  if ($DryRun) {
+    Write-StartupLog ("DRYRUN close window to tray: {0}" -f $Name)
+    return
+  }
+
+  if (-not ('WindowCloseApi' -as [type])) {
+    Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class WindowCloseApi {
+  [DllImport("user32.dll", SetLastError=true)]
+  public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+}
+"@
+  }
+
+  $wmClose = 0x0010
+  $wmSysCommand = 0x0112
+  $scClose = 0xF060
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  $sawWindow = $false
+
+  do {
+    $processes = @(Get-Process -Name $Name -ErrorAction SilentlyContinue)
+    $windowed = @($processes | Where-Object { $_.MainWindowHandle -ne 0 })
+    if ($windowed.Count -gt 0) {
+      $sawWindow = $true
+      foreach ($proc in $windowed) {
+        [void][WindowCloseApi]::PostMessage([IntPtr]$proc.MainWindowHandle, $wmSysCommand, [IntPtr]$scClose, [IntPtr]::Zero)
+        Start-Sleep -Milliseconds 300
+        $proc.Refresh()
+        if ($proc.MainWindowHandle -ne 0) {
+          [void][WindowCloseApi]::PostMessage([IntPtr]$proc.MainWindowHandle, $wmClose, [IntPtr]::Zero, [IntPtr]::Zero)
+        }
+      }
+      Start-Sleep -Seconds 1
+      if (-not (Get-Process -Name $Name -ErrorAction SilentlyContinue)) {
+        throw "Closing $Name window exited the app instead of leaving it in the tray."
+      }
+
+      $remainingWindowed = @(Get-Process -Name $Name -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 })
+      if ($remainingWindowed.Count -eq 0) {
+        return
+      }
+    }
+
+    if ($sawWindow -and $windowed.Count -eq 0 -and $processes.Count -gt 0) {
+      return
+    }
+    Start-Sleep -Milliseconds 500
+  } while ((Get-Date) -lt $deadline)
+
+  if (-not (Get-Process -Name $Name -ErrorAction SilentlyContinue)) {
+    throw "Process not running after launch: $Name"
+  }
+  $remainingWindowed = @(Get-Process -Name $Name -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 })
+  if ($remainingWindowed.Count -gt 0) {
+    throw "Timed out closing $Name window to tray."
+  }
+}
+
 function Start-AppSafe {
   param(
     [string]$Path,
-    [string]$Args
+    [string]$Args,
+    [string]$WindowStyle
   )
 
   if ($DryRun) {
@@ -65,11 +133,18 @@ function Start-AppSafe {
     throw "Missing executable path: $Path"
   }
 
-  if ($Args) {
-    Start-Process -FilePath $Path -ArgumentList $Args | Out-Null
-  } else {
-    Start-Process -FilePath $Path | Out-Null
+  $startArgs = @{
+    FilePath = $Path
   }
+
+  if ($Args) {
+    $startArgs.ArgumentList = $Args
+  }
+  if ($WindowStyle) {
+    $startArgs.WindowStyle = $WindowStyle
+  }
+
+  Start-Process @startArgs | Out-Null
 }
 
 function Get-CurrentDisplaySnapshot {
@@ -182,7 +257,7 @@ try {
   Stop-ProcessSafe -Name $config.Processes.NzxtCam
   Stop-ProcessSafe -Name $config.Processes.Aida64
   Stop-ProcessSafe -Name $config.Processes.StreamDeck
-  Stop-ProcessSafe -Name $config.Processes.SignalRgb
+  Stop-ProcessSafe -Name $config.Processes.OpenRgb
 
   if (-not $DryRun) {
     Start-Sleep -Seconds ([int]$config.Delays.BeforeLaunchSeconds)
@@ -196,14 +271,8 @@ try {
 
   Stop-ProcessSafe -Name $config.Processes.NzxtCam
 
-  Stop-ProcessSafe -Name $config.Processes.SignalRgbLauncher
-  Start-AppSafe -Path $config.Paths.SignalRgbLauncher
-
-  if (-not $DryRun) {
-    Start-Sleep -Seconds ([int]$config.Delays.SignalRgbCloseDelaySeconds)
-  }
-
-  Close-MainWindowSafe -Name $config.Processes.SignalRgbLauncher
+  Start-AppSafe -Path $config.Paths.OpenRgb -Args '--startminimized' -WindowStyle Minimized
+  Close-MainWindowToTraySafe -Name $config.Processes.OpenRgb -TimeoutSeconds 30
 
   $monitorFound = Wait-ForMonitor -MonitorConfig $config.Monitor
   if (-not $monitorFound) {
@@ -228,7 +297,8 @@ try {
   Close-MainWindowSafe -Name $config.Processes.Aida64
 
   Stop-ProcessSafe -Name $config.Processes.StreamDeck
-  Start-AppSafe -Path $config.Paths.StreamDeck -Args '--runinbk'
+  Start-AppSafe -Path $config.Paths.StreamDeck -Args '--runinbk' -WindowStyle Minimized
+  Close-MainWindowToTraySafe -Name $config.Processes.StreamDeck -TimeoutSeconds 60
 
   Write-StartupLog 'StartupAll done'
   exit 0
