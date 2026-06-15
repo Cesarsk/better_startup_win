@@ -113,6 +113,49 @@ public static class WindowCloseApi {
   }
 }
 
+function Minimize-MainWindowSafe {
+  param(
+    [string]$Name,
+    [int]$TimeoutSeconds = 60
+  )
+
+  if ($DryRun) {
+    Write-StartupLog ("DRYRUN minimize window: {0}" -f $Name)
+    return
+  }
+
+  if (-not ('WindowStateApi' -as [type])) {
+    Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class WindowStateApi {
+  [DllImport("user32.dll")]
+  public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+}
+"@
+  }
+
+  $swMinimize = 6
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  do {
+    $proc = Get-Process -Name $Name -ErrorAction SilentlyContinue |
+      Where-Object { $_.MainWindowHandle -ne 0 } |
+      Select-Object -First 1
+    if ($proc) {
+      [void][WindowStateApi]::ShowWindow([IntPtr]$proc.MainWindowHandle, $swMinimize)
+      return
+    }
+
+    Start-Sleep -Milliseconds 500
+  } while ((Get-Date) -lt $deadline)
+
+  if (-not (Get-Process -Name $Name -ErrorAction SilentlyContinue)) {
+    throw "Process not running after launch: $Name"
+  }
+
+  throw "Timed out waiting for $Name window to minimize."
+}
+
 function Start-AppSafe {
   param(
     [string]$Path,
@@ -297,8 +340,8 @@ try {
   Close-MainWindowSafe -Name $config.Processes.Aida64
 
   Stop-ProcessSafe -Name $config.Processes.StreamDeck
-  Start-AppSafe -Path $config.Paths.StreamDeck -Args '--runinbk' -WindowStyle Minimized
-  Close-MainWindowToTraySafe -Name $config.Processes.StreamDeck -TimeoutSeconds 60
+  Start-AppSafe -Path $config.Paths.StreamDeck
+  Minimize-MainWindowSafe -Name $config.Processes.StreamDeck -TimeoutSeconds 60
 
   Write-StartupLog 'StartupAll done'
   exit 0

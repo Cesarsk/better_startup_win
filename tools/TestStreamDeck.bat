@@ -1,9 +1,9 @@
 @echo off
 setlocal enabledelayedexpansion
 
-:: Launch Stream Deck with --runinbk flag (runs in background/tray)
-echo Launching Stream Deck with --runinbk...
-start "Stream Deck" "C:\Program Files\Elgato\StreamDeck\StreamDeck.exe" --runinbk
+:: Launch Stream Deck normally so the deployed/eye state remains enabled.
+echo Launching Stream Deck normally...
+start "Stream Deck" "C:\Program Files\Elgato\StreamDeck\StreamDeck.exe"
 
-echo Done - Stream Deck should be running in tray
+echo Done - Stream Deck should be running normally.
 pause
