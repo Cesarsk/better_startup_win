@@ -203,7 +203,7 @@ public static class StreamDeckMainWindowApi {
 function Start-AppSafe {
   param(
     [string]$Path,
-    [string]$Args,
+    [string[]]$Args,
     [string]$WindowStyle
   )
 
@@ -232,6 +232,54 @@ function Start-AppSafe {
   }
 
   Start-Process @startArgs | Out-Null
+}
+
+function Send-OpenRgbLoadProfile {
+  param(
+    [string]$ProfileName,
+    [string]$ServerHost = '127.0.0.1',
+    [int]$Port = 6742,
+    [int]$TimeoutSeconds = 10
+  )
+
+  if ($DryRun) {
+    Write-StartupLog ("DRYRUN load OpenRGB profile via SDK: {0}" -f $ProfileName)
+    return
+  }
+
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  $lastError = $null
+  do {
+    $client = [System.Net.Sockets.TcpClient]::new()
+    try {
+      $connect = $client.BeginConnect($ServerHost, $Port, $null, $null)
+      if (-not $connect.AsyncWaitHandle.WaitOne(1000)) {
+        throw "Timed out connecting to OpenRGB SDK server at ${ServerHost}:${Port}."
+      }
+      $client.EndConnect($connect)
+
+      $profileBytes = [System.Text.Encoding]::UTF8.GetBytes($ProfileName + [char]0)
+      $header = [byte[]]::new(16)
+      [System.Text.Encoding]::ASCII.GetBytes('ORGB').CopyTo($header, 0)
+      [BitConverter]::GetBytes([UInt32]0).CopyTo($header, 4)
+      [BitConverter]::GetBytes([UInt32]152).CopyTo($header, 8)
+      [BitConverter]::GetBytes([UInt32]$profileBytes.Length).CopyTo($header, 12)
+
+      $stream = $client.GetStream()
+      $stream.Write($header, 0, $header.Length)
+      $stream.Write($profileBytes, 0, $profileBytes.Length)
+      $stream.Flush()
+      Write-StartupLog ("OpenRGB SDK profile load sent: {0}" -f $ProfileName)
+      return
+    } catch {
+      $lastError = $_.Exception.Message
+      Start-Sleep -Milliseconds 500
+    } finally {
+      $client.Close()
+    }
+  } while ((Get-Date) -lt $deadline)
+
+  throw "Failed to send OpenRGB profile load request: $lastError"
 }
 
 function Get-CurrentDisplaySnapshot {
@@ -358,8 +406,13 @@ try {
 
   Stop-ProcessSafe -Name $config.Processes.NzxtCam
 
-  Start-AppSafe -Path $config.Paths.OpenRgb -Args '--startminimized --profile default' -WindowStyle Minimized
-  Close-MainWindowToTraySafe -Name $config.Processes.OpenRgb -TimeoutSeconds 30
+  Start-AppSafe -Path $config.Paths.OpenRgb -Args @('--noautoconnect', '--server', '--server-host', '127.0.0.1', '--server-port', '6742', '--startminimized') -WindowStyle Minimized
+
+  if (-not $DryRun) {
+    Start-Sleep -Seconds 10
+  }
+
+  Send-OpenRgbLoadProfile -ProfileName 'default'
 
   $monitorFound = Wait-ForMonitor -MonitorConfig $config.Monitor
   if (-not $monitorFound) {
