@@ -113,36 +113,80 @@ public static class WindowCloseApi {
   }
 }
 
-function Minimize-MainWindowSafe {
+function Close-StreamDeckMainWindowSafe {
   param(
     [string]$Name,
     [int]$TimeoutSeconds = 60
   )
 
   if ($DryRun) {
-    Write-StartupLog ("DRYRUN minimize window: {0}" -f $Name)
+    Write-StartupLog ("DRYRUN close Stream Deck main window: {0}" -f $Name)
     return
   }
 
-  if (-not ('WindowStateApi' -as [type])) {
+  if (-not ('StreamDeckMainWindowApi' -as [type])) {
     Add-Type -TypeDefinition @"
 using System;
+using System.Text;
 using System.Runtime.InteropServices;
-public static class WindowStateApi {
+public static class StreamDeckMainWindowApi {
+  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
   [DllImport("user32.dll")]
-  public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+  public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+  [DllImport("user32.dll")]
+  public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+  [DllImport("user32.dll")]
+  public static extern bool IsWindowVisible(IntPtr hWnd);
+  [DllImport("user32.dll")]
+  public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)]
+  public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)]
+  public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
 }
 "@
   }
 
-  $swMinimize = 6
+  $wmSysCommand = 0x0112
+  $scClose = 0xF060
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
   do {
-    $proc = Get-Process -Name $Name -ErrorAction SilentlyContinue |
-      Where-Object { $_.MainWindowHandle -ne 0 } |
-      Select-Object -First 1
-    if ($proc) {
-      [void][WindowStateApi]::ShowWindow([IntPtr]$proc.MainWindowHandle, $swMinimize)
+    $processes = @(Get-Process -Name $Name -ErrorAction SilentlyContinue)
+    $processIds = @($processes | ForEach-Object { $_.Id })
+    $target = $null
+    $callback = [StreamDeckMainWindowApi+EnumWindowsProc]{
+      param([IntPtr]$hWnd, [IntPtr]$lParam)
+
+      $procId = 0
+      [void][StreamDeckMainWindowApi]::GetWindowThreadProcessId($hWnd, [ref]$procId)
+      if ($processIds -notcontains [int]$procId -or -not [StreamDeckMainWindowApi]::IsWindowVisible($hWnd)) {
+        return $true
+      }
+
+      $titleBuilder = [System.Text.StringBuilder]::new(512)
+      [void][StreamDeckMainWindowApi]::GetWindowText($hWnd, $titleBuilder, $titleBuilder.Capacity)
+      $classBuilder = [System.Text.StringBuilder]::new(256)
+      [void][StreamDeckMainWindowApi]::GetClassName($hWnd, $classBuilder, $classBuilder.Capacity)
+      if ($titleBuilder.ToString() -eq 'Stream Deck' -and $classBuilder.ToString() -like '*QWindowIcon') {
+        $script:streamDeckMainWindowHandle = $hWnd
+        return $false
+      }
+
+      return $true
+    }
+
+    $script:streamDeckMainWindowHandle = [IntPtr]::Zero
+    if ($processIds.Count -gt 0) {
+      [void][StreamDeckMainWindowApi]::EnumWindows($callback, [IntPtr]::Zero)
+      $target = $script:streamDeckMainWindowHandle
+    }
+
+    if ($target -and $target -ne [IntPtr]::Zero) {
+      [void][StreamDeckMainWindowApi]::PostMessage($target, $wmSysCommand, [IntPtr]$scClose, [IntPtr]::Zero)
+      Start-Sleep -Seconds 2
+      if (-not (Get-Process -Name $Name -ErrorAction SilentlyContinue)) {
+        throw "Closing Stream Deck main window exited the app instead of leaving it running."
+      }
       return
     }
 
@@ -153,7 +197,7 @@ public static class WindowStateApi {
     throw "Process not running after launch: $Name"
   }
 
-  throw "Timed out waiting for $Name window to minimize."
+  throw "Timed out waiting for Stream Deck main window."
 }
 
 function Start-AppSafe {
@@ -314,7 +358,7 @@ try {
 
   Stop-ProcessSafe -Name $config.Processes.NzxtCam
 
-  Start-AppSafe -Path $config.Paths.OpenRgb -Args '--startminimized' -WindowStyle Minimized
+  Start-AppSafe -Path $config.Paths.OpenRgb -Args '--startminimized --profile default' -WindowStyle Minimized
   Close-MainWindowToTraySafe -Name $config.Processes.OpenRgb -TimeoutSeconds 30
 
   $monitorFound = Wait-ForMonitor -MonitorConfig $config.Monitor
@@ -341,7 +385,7 @@ try {
 
   Stop-ProcessSafe -Name $config.Processes.StreamDeck
   Start-AppSafe -Path $config.Paths.StreamDeck
-  Minimize-MainWindowSafe -Name $config.Processes.StreamDeck -TimeoutSeconds 60
+  Close-StreamDeckMainWindowSafe -Name $config.Processes.StreamDeck -TimeoutSeconds 60
 
   Write-StartupLog 'StartupAll done'
   exit 0
