@@ -811,7 +811,7 @@ try {
 
   Start-AppSafe -Path $config.Paths.OpenRgb -ArgumentList @('--noautoconnect', '--server', '--server-host', '127.0.0.1', '--server-port', '6742', '--startminimized') -WindowStyle Minimized
   Wait-ForOpenRgbSdkServer -TimeoutSeconds 30
-  [void](Wait-ForOpenRgbControllers -NamePatterns @('Govee') -TimeoutSeconds 45)
+  [void](Wait-ForOpenRgbControllers -NamePatterns @('Govee', 'Corsair Vengeance') -TimeoutSeconds 45)
   Send-OpenRgbLoadProfile -ProfileName 'default'
 
   $monitorFound = Wait-ForMonitor -MonitorConfig $config.Monitor
