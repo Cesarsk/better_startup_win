@@ -294,8 +294,10 @@ function Send-OpenRgbLoadProfile {
       Write-StartupLog ("OpenRGB SDK profile load sent: {0}" -f $ProfileName)
 
       Start-Sleep -Milliseconds 500
-      $updatedCount = Send-OpenRgbTargetedControllerUpdates -Stream $stream -ProtocolVersion $protocolVersion -NamePatterns @('Govee') -RepeatCount 3 -RepeatDelayMilliseconds 2000
-      Write-StartupLog ("OpenRGB SDK targeted Govee updates sent: {0}" -f $updatedCount)
+      $corsairCount = Send-OpenRgbTargetedControllerUpdates -Stream $stream -ProtocolVersion $protocolVersion -NamePatterns @('Corsair Vengeance') -RepeatCount 1
+      Write-StartupLog ("OpenRGB SDK Corsair mode and color updates sent: {0}" -f $corsairCount)
+      $goveeCount = Send-OpenRgbTargetedControllerUpdates -Stream $stream -ProtocolVersion $protocolVersion -NamePatterns @('Govee') -RepeatCount 3 -RepeatDelayMilliseconds 2000
+      Write-StartupLog ("OpenRGB SDK targeted Govee updates sent: {0}" -f $goveeCount)
       return
     } catch {
       $lastError = $_.Exception.Message
@@ -649,6 +651,8 @@ function Wait-ForOpenRgbControllers {
 
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
   $lastNames = @()
+  $previousCount = -1
+  $stableSince = $null
   do {
     $lastNames = @(Get-OpenRgbControllerNames)
     $missing = @($NamePatterns | Where-Object {
@@ -656,12 +660,25 @@ function Wait-ForOpenRgbControllers {
       -not ($lastNames | Where-Object { $_ -like "*$pattern*" })
     })
 
-    if ($missing.Count -eq 0) {
-      Write-StartupLog ("OpenRGB controllers ready: {0}" -f ($lastNames -join ', '))
-      return $true
+    If ($missing.Count -eq 0) {
+      $currentCount = $lastNames.Count
+      if ($currentCount -eq $previousCount -and $currentCount -gt 0) {
+        if (-not $stableSince) {
+          $stableSince = Get-Date
+        } elseif (((Get-Date) - $stableSince).TotalSeconds -ge 3) {
+          Write-StartupLog ("OpenRGB controllers ready: {0}" -f ($lastNames -join ', '))
+          return $true
+        }
+      } else {
+        $previousCount = $currentCount
+        $stableSince = $null
+      }
+    } else {
+      $previousCount = -1
+      $stableSince = $null
     }
 
-    Start-Sleep -Seconds 2
+    Start-Sleep -Seconds 1
   } while ((Get-Date) -lt $deadline)
 
   Write-StartupLog ("OpenRGB controllers not all detected before profile load. Missing: {0}. Available: {1}" -f ($missing -join ', '), ($lastNames -join ', '))
@@ -811,7 +828,10 @@ try {
 
   Start-AppSafe -Path $config.Paths.OpenRgb -ArgumentList @('--noautoconnect', '--server', '--server-host', '127.0.0.1', '--server-port', '6742', '--startminimized') -WindowStyle Minimized
   Wait-ForOpenRgbSdkServer -TimeoutSeconds 30
-  [void](Wait-ForOpenRgbControllers -NamePatterns @('Govee', 'Corsair Vengeance') -TimeoutSeconds 45)
+  [void](Wait-ForOpenRgbControllers -NamePatterns @('Govee') -TimeoutSeconds 45)
+  if (-not $DryRun) {
+    Start-Sleep -Seconds 5
+  }
   Send-OpenRgbLoadProfile -ProfileName 'default'
 
   $monitorFound = Wait-ForMonitor -MonitorConfig $config.Monitor
