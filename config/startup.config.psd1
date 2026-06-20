@@ -16,24 +16,19 @@
 
   Delays = @{
     BeforeLaunchSeconds = 20
-    CamWarmupSeconds = 10
-    SignalRgbCloseDelaySeconds = 5
     AidaCloseDelaySeconds = 5
   }
 
   Paths = @{
-    NzxtCam = 'C:\Program Files\NZXT CAM\NZXT CAM.exe'
-    SignalRgbLauncher = 'C:\Users\lucac\AppData\Local\VortxEngine\SignalRgbLauncher.exe'
+    OpenRgb = 'C:\Program Files\OpenRGB\OpenRGB.exe'
     Aida64 = 'D:\Aida64\aida64.exe'
     StreamDeck = 'C:\Program Files\Elgato\StreamDeck\StreamDeck.exe'
   }
 
   Processes = @{
-    NzxtCam = 'NZXT CAM'
-    SignalRgbLauncher = 'SignalRgbLauncher'
     Aida64 = 'aida64'
     StreamDeck = 'StreamDeck'
-    SignalRgb = 'SignalRGB'
+    OpenRgb = 'OpenRGB'
   }
 
   Behavior = @{

@@ -2,4 +2,4 @@
 taskkill /f /im "NZXT CAM.exe" > nul 2>&1
 taskkill /f /im "aida64.exe" > nul 2>&1
 taskkill /f /im "StreamDeck.exe" > nul 2>&1
-taskkill /f /im "SignalRGB.exe" > nul 2>&1
+taskkill /f /im "OpenRGB.exe" > nul 2>&1
