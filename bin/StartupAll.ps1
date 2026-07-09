@@ -832,33 +832,36 @@ try {
   if (-not $DryRun) {
     Start-Sleep -Seconds 5
   }
-  Send-OpenRgbLoadProfile -ProfileName 'default'
+  Send-OpenRgbLoadProfile -ProfileName 'main'
 
   $monitorFound = Wait-ForMonitor -MonitorConfig $config.Monitor
   if (-not $monitorFound) {
-    Write-StartupLog 'StartupAll done with monitor timeout'
-    exit 30
+    Write-StartupLog 'StartupAll done, monitor not found — skipping AIDA64 and StreamDeck'
   }
 
-  if ($config.Behavior.RunTouchCalibrationOnResolutionRecovery -and $resolutionRecovered) {
-    Write-StartupLog 'Running touch calibration'
-    Invoke-TouchCalibration
+  if ($monitorFound) {
+    if ($config.Behavior.RunTouchCalibrationOnResolutionRecovery -and $resolutionRecovered) {
+      Write-StartupLog 'Running touch calibration'
+      Invoke-TouchCalibration
+    } else {
+      Write-StartupLog 'Skipping touch calibration'
+    }
+
+    Stop-ProcessSafe -Name $config.Processes.Aida64
+    Start-AppSafe -Path $config.Paths.Aida64
+
+    if (-not $DryRun) {
+      Start-Sleep -Seconds ([int]$config.Delays.AidaCloseDelaySeconds)
+    }
+
+    Close-MainWindowSafe -Name $config.Processes.Aida64
+
+    Stop-ProcessSafe -Name $config.Processes.StreamDeck
+    Start-AppSafe -Path $config.Paths.StreamDeck
+    Close-StreamDeckMainWindowSafe -Name $config.Processes.StreamDeck -TimeoutSeconds 60
   } else {
-    Write-StartupLog 'Skipping touch calibration'
+    Write-StartupLog 'Skipping AIDA64 and StreamDeck (monitor not connected)'
   }
-
-  Stop-ProcessSafe -Name $config.Processes.Aida64
-  Start-AppSafe -Path $config.Paths.Aida64
-
-  if (-not $DryRun) {
-    Start-Sleep -Seconds ([int]$config.Delays.AidaCloseDelaySeconds)
-  }
-
-  Close-MainWindowSafe -Name $config.Processes.Aida64
-
-  Stop-ProcessSafe -Name $config.Processes.StreamDeck
-  Start-AppSafe -Path $config.Paths.StreamDeck
-  Close-StreamDeckMainWindowSafe -Name $config.Processes.StreamDeck -TimeoutSeconds 60
 
   Write-StartupLog 'StartupAll done'
   exit 0
