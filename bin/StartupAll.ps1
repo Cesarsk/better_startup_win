@@ -53,172 +53,6 @@ function Stop-ProcessSafe {
   throw "Timed out waiting for process to stop: $Name"
 }
 
-function Close-MainWindowSafe {
-  param([string]$Name)
-  if ($DryRun) {
-    Write-StartupLog ("DRYRUN close window: {0}" -f $Name)
-    return
-  }
-
-  foreach ($proc in (Get-Process -Name $Name -ErrorAction SilentlyContinue)) {
-    [void]$proc.CloseMainWindow()
-  }
-}
-
-function Close-MainWindowToTraySafe {
-  param(
-    [string]$Name,
-    [int]$TimeoutSeconds = 60
-  )
-
-  if ($DryRun) {
-    Write-StartupLog ("DRYRUN close window to tray: {0}" -f $Name)
-    return
-  }
-
-  if (-not ('WindowCloseApi' -as [type])) {
-    Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-public static class WindowCloseApi {
-  [DllImport("user32.dll", SetLastError=true)]
-  public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
-}
-"@
-  }
-
-  $wmClose = 0x0010
-  $wmSysCommand = 0x0112
-  $scClose = 0xF060
-  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-  $sawWindow = $false
-
-  do {
-    $processes = @(Get-Process -Name $Name -ErrorAction SilentlyContinue)
-    $windowed = @($processes | Where-Object { $_.MainWindowHandle -ne 0 })
-    if ($windowed.Count -gt 0) {
-      $sawWindow = $true
-      foreach ($proc in $windowed) {
-        [void][WindowCloseApi]::PostMessage([IntPtr]$proc.MainWindowHandle, $wmSysCommand, [IntPtr]$scClose, [IntPtr]::Zero)
-        Start-Sleep -Milliseconds 300
-        $proc.Refresh()
-        if ($proc.MainWindowHandle -ne 0) {
-          [void][WindowCloseApi]::PostMessage([IntPtr]$proc.MainWindowHandle, $wmClose, [IntPtr]::Zero, [IntPtr]::Zero)
-        }
-      }
-      Start-Sleep -Seconds 1
-      if (-not (Get-Process -Name $Name -ErrorAction SilentlyContinue)) {
-        throw "Closing $Name window exited the app instead of leaving it in the tray."
-      }
-
-      $remainingWindowed = @(Get-Process -Name $Name -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 })
-      if ($remainingWindowed.Count -eq 0) {
-        return
-      }
-    }
-
-    if ($sawWindow -and $windowed.Count -eq 0 -and $processes.Count -gt 0) {
-      return
-    }
-    Start-Sleep -Milliseconds 500
-  } while ((Get-Date) -lt $deadline)
-
-  if (-not (Get-Process -Name $Name -ErrorAction SilentlyContinue)) {
-    throw "Process not running after launch: $Name"
-  }
-  $remainingWindowed = @(Get-Process -Name $Name -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 })
-  if ($remainingWindowed.Count -gt 0) {
-    throw "Timed out closing $Name window to tray."
-  }
-}
-
-function Close-StreamDeckMainWindowSafe {
-  param(
-    [string]$Name,
-    [int]$TimeoutSeconds = 60
-  )
-
-  if ($DryRun) {
-    Write-StartupLog ("DRYRUN close Stream Deck main window: {0}" -f $Name)
-    return
-  }
-
-  if (-not ('StreamDeckMainWindowApi' -as [type])) {
-    Add-Type -TypeDefinition @"
-using System;
-using System.Text;
-using System.Runtime.InteropServices;
-public static class StreamDeckMainWindowApi {
-  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-  [DllImport("user32.dll")]
-  public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
-  [DllImport("user32.dll")]
-  public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-  [DllImport("user32.dll")]
-  public static extern bool IsWindowVisible(IntPtr hWnd);
-  [DllImport("user32.dll")]
-  public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
-  [DllImport("user32.dll", CharSet=CharSet.Unicode)]
-  public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
-  [DllImport("user32.dll", CharSet=CharSet.Unicode)]
-  public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
-}
-"@
-  }
-
-  $wmSysCommand = 0x0112
-  $scClose = 0xF060
-  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-  do {
-    $processes = @(Get-Process -Name $Name -ErrorAction SilentlyContinue)
-    $processIds = @($processes | ForEach-Object { $_.Id })
-    $target = $null
-    $callback = [StreamDeckMainWindowApi+EnumWindowsProc]{
-      param([IntPtr]$hWnd, [IntPtr]$lParam)
-
-      $procId = 0
-      [void][StreamDeckMainWindowApi]::GetWindowThreadProcessId($hWnd, [ref]$procId)
-      if ($processIds -notcontains [int]$procId -or -not [StreamDeckMainWindowApi]::IsWindowVisible($hWnd)) {
-        return $true
-      }
-
-      $titleBuilder = [System.Text.StringBuilder]::new(512)
-      [void][StreamDeckMainWindowApi]::GetWindowText($hWnd, $titleBuilder, $titleBuilder.Capacity)
-      $classBuilder = [System.Text.StringBuilder]::new(256)
-      [void][StreamDeckMainWindowApi]::GetClassName($hWnd, $classBuilder, $classBuilder.Capacity)
-      if ($titleBuilder.ToString() -eq 'Stream Deck' -and $classBuilder.ToString() -like '*QWindowIcon') {
-        $script:streamDeckMainWindowHandle = $hWnd
-        return $false
-      }
-
-      return $true
-    }
-
-    $script:streamDeckMainWindowHandle = [IntPtr]::Zero
-    if ($processIds.Count -gt 0) {
-      [void][StreamDeckMainWindowApi]::EnumWindows($callback, [IntPtr]::Zero)
-      $target = $script:streamDeckMainWindowHandle
-    }
-
-    if ($target -and $target -ne [IntPtr]::Zero) {
-      [void][StreamDeckMainWindowApi]::PostMessage($target, $wmSysCommand, [IntPtr]$scClose, [IntPtr]::Zero)
-      Start-Sleep -Seconds 2
-      if (-not (Get-Process -Name $Name -ErrorAction SilentlyContinue)) {
-        throw "Closing Stream Deck main window exited the app instead of leaving it running."
-      }
-      return
-    }
-
-    Start-Sleep -Milliseconds 500
-  } while ((Get-Date) -lt $deadline)
-
-  if (-not (Get-Process -Name $Name -ErrorAction SilentlyContinue)) {
-    throw "Process not running after launch: $Name"
-  }
-
-  throw "Timed out waiting for Stream Deck main window."
-}
-
 function Start-AppSafe {
   param(
     [string]$Path,
@@ -259,55 +93,6 @@ function Start-AppSafe {
   if ($Wait -and $process.ExitCode -ne 0) {
     throw "Process exited with code $($process.ExitCode): $Path"
   }
-}
-
-function Send-OpenRgbLoadProfile {
-  param(
-    [string]$ProfileName,
-    [string]$ServerHost = '127.0.0.1',
-    [int]$Port = 6742,
-    [int]$TimeoutSeconds = 10
-  )
-
-  if ($DryRun) {
-    Write-StartupLog ("DRYRUN load OpenRGB profile via SDK: {0}" -f $ProfileName)
-    return
-  }
-
-  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-  $lastError = $null
-  do {
-    $client = [System.Net.Sockets.TcpClient]::new()
-    try {
-      $connect = $client.BeginConnect($ServerHost, $Port, $null, $null)
-      if (-not $connect.AsyncWaitHandle.WaitOne(1000)) {
-        throw "Timed out connecting to OpenRGB SDK server at ${ServerHost}:${Port}."
-      }
-      $client.EndConnect($connect)
-      $stream = $client.GetStream()
-      $stream.ReadTimeout = 10000
-      $stream.WriteTimeout = 10000
-
-      $protocolVersion = 0
-      $profileBytes = [System.Text.Encoding]::UTF8.GetBytes($ProfileName + [char]0)
-      Write-OpenRgbSdkPacket -Stream $stream -PacketId 152 -Payload $profileBytes
-      Write-StartupLog ("OpenRGB SDK profile load sent: {0}" -f $ProfileName)
-
-      Start-Sleep -Milliseconds 500
-      $corsairCount = Send-OpenRgbTargetedControllerUpdates -Stream $stream -ProtocolVersion $protocolVersion -NamePatterns @('Corsair Vengeance') -RepeatCount 1
-      Write-StartupLog ("OpenRGB SDK Corsair mode and color updates sent: {0}" -f $corsairCount)
-      $goveeCount = Send-OpenRgbTargetedControllerUpdates -Stream $stream -ProtocolVersion $protocolVersion -NamePatterns @('Govee') -RepeatCount 3 -RepeatDelayMilliseconds 2000
-      Write-StartupLog ("OpenRGB SDK targeted Govee updates sent: {0}" -f $goveeCount)
-      return
-    } catch {
-      $lastError = $_.Exception.Message
-      Start-Sleep -Milliseconds 500
-    } finally {
-      $client.Close()
-    }
-  } while ((Get-Date) -lt $deadline)
-
-  throw "Failed to send OpenRGB profile load request: $lastError"
 }
 
 function Write-OpenRgbSdkPacket {
@@ -758,37 +543,6 @@ function Wait-ForResolution {
   throw 'Timeout waiting for preferred resolution.'
 }
 
-function Get-EdidMonitorNames {
-  $monitors = Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ErrorAction SilentlyContinue
-  foreach ($monitor in $monitors) {
-    ($monitor.UserFriendlyName | Where-Object { $_ -ne 0 } | ForEach-Object { [char]$_ }) -join ''
-  }
-}
-
-function Wait-ForMonitor {
-  param([hashtable]$MonitorConfig)
-
-  if ($DryRun) {
-    Write-StartupLog 'DRYRUN skipping monitor wait'
-    return $true
-  }
-
-  $elapsed = 0
-  while ($elapsed -lt [int]$MonitorConfig.TimeoutSeconds) {
-    $names = Get-EdidMonitorNames
-    if ($names -and ($names | Where-Object { $_ -like "*$($MonitorConfig.EdidName)*" })) {
-      Write-StartupLog ("Monitor detected: {0}" -f $MonitorConfig.EdidName)
-      return $true
-    }
-
-    Write-StartupLog ("Monitor not detected yet: {0}" -f $MonitorConfig.EdidName)
-    Start-Sleep -Seconds ([int]$MonitorConfig.PollSeconds)
-    $elapsed += [int]$MonitorConfig.PollSeconds
-  }
-
-  return $false
-}
-
 function Invoke-TouchCalibration {
   $touchScript = Join-Path $scriptDir 'TouchCalibration.bat'
   if ($DryRun) {
@@ -818,8 +572,6 @@ try {
   $resolutionRecovered = Wait-ForResolution -DisplayConfig $config.Display
   Write-StartupLog ("ResolutionRecovered={0}" -f $resolutionRecovered)
 
-  Stop-ProcessSafe -Name $config.Processes.Aida64
-  Stop-ProcessSafe -Name $config.Processes.StreamDeck
   Stop-ProcessSafe -Name $config.Processes.OpenRgb
 
   if (-not $DryRun) {
@@ -832,35 +584,12 @@ try {
   if (-not $DryRun) {
     Start-Sleep -Seconds 5
   }
-  Send-OpenRgbLoadProfile -ProfileName 'main'
 
-  $monitorFound = Wait-ForMonitor -MonitorConfig $config.Monitor
-  if (-not $monitorFound) {
-    Write-StartupLog 'StartupAll done, monitor not found — skipping AIDA64 and StreamDeck'
-  }
-
-  if ($monitorFound) {
-    if ($config.Behavior.RunTouchCalibrationOnResolutionRecovery -and $resolutionRecovered) {
-      Write-StartupLog 'Running touch calibration'
-      Invoke-TouchCalibration
-    } else {
-      Write-StartupLog 'Skipping touch calibration'
-    }
-
-    Stop-ProcessSafe -Name $config.Processes.Aida64
-    Start-AppSafe -Path $config.Paths.Aida64
-
-    if (-not $DryRun) {
-      Start-Sleep -Seconds ([int]$config.Delays.AidaCloseDelaySeconds)
-    }
-
-    Close-MainWindowSafe -Name $config.Processes.Aida64
-
-    Stop-ProcessSafe -Name $config.Processes.StreamDeck
-    Start-AppSafe -Path $config.Paths.StreamDeck
-    Close-StreamDeckMainWindowSafe -Name $config.Processes.StreamDeck -TimeoutSeconds 60
+  if ($config.Behavior.RunTouchCalibrationOnResolutionRecovery -and $resolutionRecovered) {
+    Write-StartupLog 'Running touch calibration'
+    Invoke-TouchCalibration
   } else {
-    Write-StartupLog 'Skipping AIDA64 and StreamDeck (monitor not connected)'
+    Write-StartupLog 'Skipping touch calibration'
   }
 
   Write-StartupLog 'StartupAll done'

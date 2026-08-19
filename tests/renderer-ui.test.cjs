@@ -515,7 +515,7 @@ test("StartupAll migration template expands into a full workflow", async () => {
   const workflowSelect = app.document.getElementById("workflow-select");
   const stepSelect = app.document.getElementById("step-select");
   assert.equal(workflowSelect.options[0].textContent, "StartupAll migration");
-  assert.equal(stepSelect.options.length, 15);
+  assert.equal(stepSelect.options.length, 6);
   assert.equal(stepSelect.options[0].textContent, "No action selected");
   assert.match(stepSelect.options[1].textContent, /Wait for preferred display/i);
   const openRgbOption = Array.from(stepSelect.options).find((option) => option.textContent === "Start OpenRGB server and load default profile");
@@ -535,16 +535,8 @@ test("StartupAll migration template expands into a full workflow", async () => {
   assert.match(app.document.querySelector('[data-action-key="script"]').value, /Write-Packet 1101/);
   assert.match(app.document.querySelector('[data-action-key="script"]').value, /Write-Packet 1050/);
   assert.doesNotMatch(app.document.querySelector('[data-action-key="script"]').value, /Close-MainWindowToTray -Name 'OpenRGB'/);
-
-  const streamDeckOption = Array.from(stepSelect.options).find((option) => option.textContent === "Start StreamDeck and close main window");
-  stepSelect.value = streamDeckOption.value;
-  stepSelect.dispatchEvent(new app.window.Event("change", { bubbles: true }));
-  assert.equal(app.document.getElementById("step-action-select").value, "run_powershell");
-  assert.doesNotMatch(app.document.querySelector('[data-action-key="script"]').value, /--runinbk/);
-  assert.doesNotMatch(app.document.querySelector('[data-action-key="script"]').value, /Close-MainWindowToTray -Name 'StreamDeck'/);
-  assert.match(app.document.querySelector('[data-action-key="script"]').value, /QWindowIcon/);
-  assert.doesNotMatch(app.document.querySelector('[data-action-key="script"]').value, /QWindowToolSaveBits/);
-  assert.match(app.document.querySelector('[data-action-key="script"]').value, /Close-StreamDeckMainWindow -Name 'StreamDeck' -TimeoutSeconds 60/);
+  assert.doesNotMatch(app.document.querySelector('[data-action-key="script"]').value, /StreamDeck/);
+  assert.doesNotMatch(app.document.querySelector('[data-action-key="script"]').value, /Aida64/);
   app.cleanup();
 });
 

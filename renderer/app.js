@@ -211,18 +211,6 @@ function buildStartupAllTemplate() {
         policy: { timeoutSeconds: 330, retryCount: 0, retryDelayMilliseconds: 1000, onFailure: "stop_workflow" }
       },
       {
-        label: "Stop AIDA64",
-        actionType: "stop_process",
-        action: { processName: "aida64", force: true },
-        gate: "all"
-      },
-      {
-        label: "Stop StreamDeck",
-        actionType: "stop_process",
-        action: { processName: "StreamDeck", force: true },
-        gate: "all"
-      },
-      {
         label: "Stop OpenRGB",
         actionType: "stop_process",
         action: { processName: "OpenRGB", force: true },
@@ -367,25 +355,6 @@ function buildStartupAllTemplate() {
         gate: "all"
       },
       {
-        label: "Wait for XENEON EDGE monitor",
-        actionType: "run_powershell",
-        action: {
-          script: [
-            "$deadline = (Get-Date).AddSeconds(600)",
-            "$found = $false",
-            "while ((Get-Date) -lt $deadline) {",
-            "  $names = Get-CimInstance -Namespace root\\wmi -ClassName WmiMonitorID -ErrorAction SilentlyContinue | ForEach-Object { ($_.UserFriendlyName | Where-Object { $_ -ne 0 } | ForEach-Object { [char]$_ }) -join '' }",
-            "  if ($names | Where-Object { $_ -like '*XENEON EDGE*' }) { $found = $true; break }",
-            "  Start-Sleep -Seconds 10",
-            "}",
-            "if (-not $found) { throw 'Timeout waiting for XENEON EDGE monitor.' }"
-          ].join("\n"),
-          timeoutSeconds: 620
-        },
-        gate: "all",
-        policy: { timeoutSeconds: 630, retryCount: 0, retryDelayMilliseconds: 1000, onFailure: "stop_workflow" }
-      },
-      {
         label: "Run touch calibration when display is ready",
         actionType: "run_powershell",
         action: {
@@ -402,107 +371,9 @@ function buildStartupAllTemplate() {
         },
         gate: "all",
         policy: { timeoutSeconds: 190, retryCount: 0, retryDelayMilliseconds: 1000, onFailure: "stop_workflow" }
-      },
-      {
-        label: "Stop AIDA64 again",
-        actionType: "stop_process",
-        action: { processName: "aida64", force: true },
-        gate: "all"
-      },
-      {
-        label: "Start AIDA64",
-        actionType: "start_app",
-        action: {
-          path: "D:\\Aida64\\aida64.exe",
-          args: "",
-          workingDirectory: "",
-          waitForExit: false
-        },
-        gate: "all"
-      },
-      {
-        label: "Wait before closing AIDA64",
-        actionType: "wait",
-        action: { milliseconds: 5000 },
-        gate: "all"
-      },
-      {
-        label: "Close AIDA64 window",
-        actionType: "close_window",
-        action: { processName: "aida64", waitMilliseconds: 0 },
-        gate: "all"
-      },
-      {
-        label: "Stop StreamDeck again",
-        actionType: "stop_process",
-        action: { processName: "StreamDeck", force: true },
-        gate: "all"
-      },
-      {
-        label: "Start StreamDeck and close main window",
-        actionType: "run_powershell",
-        action: {
-          script: [
-            "function Close-StreamDeckMainWindow {",
-            "  param([string]$Name, [int]$TimeoutSeconds = 60)",
-            "  if (-not ('StreamDeckMainWindowApi' -as [type])) {",
-            "    Add-Type -TypeDefinition @\"",
-            "using System;",
-            "using System.Text;",
-            "using System.Runtime.InteropServices;",
-            "public static class StreamDeckMainWindowApi {",
-            "  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);",
-            "  [DllImport(\"user32.dll\")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);",
-            "  [DllImport(\"user32.dll\")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);",
-            "  [DllImport(\"user32.dll\")] public static extern bool IsWindowVisible(IntPtr hWnd);",
-            "  [DllImport(\"user32.dll\")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);",
-            "  [DllImport(\"user32.dll\", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);",
-            "  [DllImport(\"user32.dll\", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);",
-            "}",
-            "\"@",
-            "  }",
-            "  $wmSysCommand = 0x0112",
-            "  $scClose = 0xF060",
-            "  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)",
-            "  do {",
-            "    $processes = @(Get-Process -Name $Name -ErrorAction SilentlyContinue)",
-            "    $processIds = @($processes | ForEach-Object { $_.Id })",
-            "    $callback = [StreamDeckMainWindowApi+EnumWindowsProc]{",
-            "      param([IntPtr]$hWnd, [IntPtr]$lParam)",
-            "      $procId = 0",
-            "      [void][StreamDeckMainWindowApi]::GetWindowThreadProcessId($hWnd, [ref]$procId)",
-            "      if ($processIds -notcontains [int]$procId -or -not [StreamDeckMainWindowApi]::IsWindowVisible($hWnd)) { return $true }",
-            "      $titleBuilder = [System.Text.StringBuilder]::new(512)",
-            "      [void][StreamDeckMainWindowApi]::GetWindowText($hWnd, $titleBuilder, $titleBuilder.Capacity)",
-            "      $classBuilder = [System.Text.StringBuilder]::new(256)",
-            "      [void][StreamDeckMainWindowApi]::GetClassName($hWnd, $classBuilder, $classBuilder.Capacity)",
-            "      if ($titleBuilder.ToString() -eq 'Stream Deck' -and $classBuilder.ToString() -like '*QWindowIcon') { $script:streamDeckMainWindowHandle = $hWnd; return $false }",
-            "      return $true",
-            "    }",
-            "    $script:streamDeckMainWindowHandle = [IntPtr]::Zero",
-            "    if ($processIds.Count -gt 0) { [void][StreamDeckMainWindowApi]::EnumWindows($callback, [IntPtr]::Zero) }",
-            "    if ($script:streamDeckMainWindowHandle -ne [IntPtr]::Zero) {",
-            "      [void][StreamDeckMainWindowApi]::PostMessage($script:streamDeckMainWindowHandle, $wmSysCommand, [IntPtr]$scClose, [IntPtr]::Zero)",
-            "      Start-Sleep -Seconds 2",
-            "      if (-not (Get-Process -Name $Name -ErrorAction SilentlyContinue)) { throw 'Closing Stream Deck main window exited the app instead of leaving it running.' }",
-            "      return",
-            "    }",
-            "    Start-Sleep -Milliseconds 500",
-            "  } while ((Get-Date) -lt $deadline)",
-            "  if (-not (Get-Process -Name $Name -ErrorAction SilentlyContinue)) { throw \"Process not running after launch: $Name\" }",
-            "  throw 'Timed out waiting for Stream Deck main window.'",
-            "}",
-            "$path = 'C:\\Program Files\\Elgato\\StreamDeck\\StreamDeck.exe'",
-            "if (-not (Test-Path -LiteralPath $path)) { throw \"Missing executable path: $path\" }",
-            "Start-Process -FilePath $path | Out-Null",
-            "Close-StreamDeckMainWindow -Name 'StreamDeck' -TimeoutSeconds 60"
-          ].join("\n"),
-          timeoutSeconds: 75
-        },
-        gate: "all"
       }
     ],
-    edges: Array.from({ length: 13 }, (_, index) => ({ from: index, to: index + 1, event: "completed" })),
+    edges: Array.from({ length: 4 }, (_, index) => ({ from: index, to: index + 1, event: "completed" })),
     notes: {
       source: "bin\\StartupAll.ps1",
       config: "config\\startup.config.psd1",
